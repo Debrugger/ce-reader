@@ -4,22 +4,14 @@
 #include <stdlib.h>
 
 typedef struct node node;
-typedef struct freq_list freq_list;
 
 struct node
-{   
-	char c;
-	short int freq;
+{
 	node* parent;
 	node* child_l;
 	node* child_r;
-};
-
-struct freq_list
-{
-	freq_list* next;
 	char c;
-	short int freq;
+	long int freq;
 };
 
 //void swap(node* a, node* b) //only for nodes right next to each other =>a<=>b<=
@@ -36,29 +28,22 @@ struct freq_list
 //}
 
 node* tree_head;
-freq_list* freq_head;
-freq_list* sorted_freq_head;
+node* freq_head;
+node* sorted_freq_head;
 
-void node_init(node* n)
+void node_init(node* p)
 {
-	n->parent = n->child_r = n->child_l = NULL;
-	n->freq = n->c = 0;
-}
-
-void freq_list_init(freq_list* p)
-{
-	p->next = NULL;
+	p->parent = p->child_l = p->child_r = NULL;
 	p->freq = p->c = 0;
 }
 
-freq_list* insertion_sort(freq_list* unsorted_head)
+node* insertion_sort(node* unsorted_head)
 {
-	freq_list* sorted_head;
+	node* sorted_head;
 
 	sorted_head = unsorted_head;
-	unsorted_head = unsorted_head->next;
-	sorted_head->next = NULL;
-	int i = 0;
+	unsorted_head = unsorted_head->parent;
+	sorted_head->parent = NULL;
 	while (unsorted_head)
 	{
 		//Sonderfall: in sorted list nur head
@@ -67,19 +52,22 @@ freq_list* insertion_sort(freq_list* unsorted_head)
 		//freqhead next = head, head = freqhead
 		//else head kleiner als freqhead
 		//head next = freqhead, freqhead next = null
-		freq_list* unsorted_next = unsorted_head->next;
+		node* unsorted_next = unsorted_head->parent;
 		
-		if (!sorted_head->next)
+		if (!sorted_head->parent)
 		{
 			if (sorted_head->freq > unsorted_head->freq)
 			{
-				unsorted_head->next = sorted_head;
+				unsorted_head->parent = sorted_head;
+				unsorted_head->child_l = NULL;
+				sorted_head->child_l = unsorted_head;
 				sorted_head = unsorted_head;
 			}
 			else if (sorted_head->freq <= unsorted_head->freq)
 			{
-				sorted_head->next = unsorted_head;
-				unsorted_head->next = NULL;
+				sorted_head->parent = unsorted_head;
+				unsorted_head->child_l = sorted_head;
+				unsorted_head->parent = NULL;
 			}
 		}
 
@@ -90,22 +78,25 @@ freq_list* insertion_sort(freq_list* unsorted_head)
 		//freqhead auf freqhead next
 		else
 		{         
-		  	freq_list* sorted_cur = sorted_head;
-			while (sorted_cur->next)
+		  	node* sorted_cur = sorted_head;
+			while (sorted_cur->parent)
 			{
-				if (unsorted_head->freq < sorted_cur->next->freq)
+				if (unsorted_head->freq < sorted_cur->parent->freq)
 					break;
-				sorted_cur = sorted_cur->next;
+				sorted_cur = sorted_cur->parent;
 			}
-			if (!sorted_cur->next)
+			if (!sorted_cur->parent)
 			{
-				sorted_cur->next = unsorted_head;
-				unsorted_head->next = NULL;
+				sorted_cur->parent = unsorted_head;
+//				unsorted_head->child_l = sorted_cur;
+				unsorted_head->parent = NULL;
 			}
 			else
 			{
-				unsorted_head->next = sorted_cur->next;
-				sorted_cur->next = unsorted_head;
+				unsorted_head->parent = sorted_cur->parent;
+//				sorted_cur->parent->child_l = unsorted_head;
+				sorted_cur->parent = unsorted_head;
+//				unsorted_head->child_l = sorted_cur;
 			}
 		}
 		unsorted_head = unsorted_next;
@@ -113,48 +104,145 @@ freq_list* insertion_sort(freq_list* unsorted_head)
 	return sorted_head;
 }
 
+node* build_huff_tree(node* lh) //lh is the least frequent node
+{
+	node *uh, *a, *b, *q;
+	for (uh = lh; uh->parent; uh = uh->parent);
+
+	node* r;
+	for (r = lh; r; r = r->parent)
+	{
+		if (!r->freq)
+			free(r);
+		else
+			break;
+	}
+	lh = r;
+
+	while (uh != lh)
+	{
+		if (!lh->parent)
+		{
+			printf("%c breaking\n", lh->c);
+			break;
+		}
+		a = lh;
+		b = lh->parent;
+		q = (node*)calloc(1, sizeof(node));
+		q->freq = a->freq + b->freq;
+
+		q->child_l = (a->freq <= b->freq) ? a : b;
+		q->child_r = (a->freq > b->freq) ? a : b;
+
+		if (lh->parent == uh)
+		{
+			uh = q;
+			return uh;
+		}
+		lh = lh->parent->parent;
+		node* n = lh;
+		while (n->freq <= q->freq)
+		{
+			if (!n->parent)
+				break;
+			n = n->parent;
+		}
+
+		if (n->parent && n != lh) //now insert above n
+		{
+			q->parent = n->parent;
+			n->parent = q;
+		}
+		else if (!n->parent && n == lh)
+		{
+			if (n->freq < q->freq)
+			{
+				n->parent = q;
+				lh =n;
+				uh = q;
+			}
+			else
+			{
+				q->parent = n;
+            n->parent = NULL;
+				uh = n;
+				lh = q;
+			}
+		}
+		else if (n == lh)
+		{
+			lh = q;
+			q->parent = n;
+		}
+		else if (!n->parent)
+		{
+			uh = q;
+			n->parent = q;
+		}
+	}
+	return uh;
+}
+
 int main(int argc, char* argv[])
 {
 	int16_t occurrences[255];
 
+	//TODO replace this with calloc so its already initialized
 	for (int i = 0; i < 256; i++)
 	{
 		occurrences[i] = 0;
 	}
 	for (int32_t i = 0; i < strlen(argv[1]); i++)
 	{
-		occurrences[(int)(argv[1][i])]++;
+		if (argv[1][i])                           //we're not encoding ascii null
+			occurrences[(int)(argv[1][i])/* - 1*/]++;
 	}
 
-	freq_list* current;
-	freq_list* prev;
-   for (int c = 0; (int)c < 256; c++)
+	node* current;
+	node* prev = NULL;
+   for (int c = 0; (int)c < 255; c++)
 	{
-		current = malloc(sizeof(freq_list));
-		if (!current)
+		int created = 0;
+		if (occurrences[c])
 		{
-			printf("Could not allocate more memory\n");
-			exit(1);
+			printf("freq %d, allocating %zd\n", occurrences[c], sizeof(node));
+			current = (node*)calloc(1, sizeof(node));
+			if (!current)
+			{
+				printf("Could not allocate more memory\n");
+				exit(1);
+			}
+
+			current->c = (char)c;
+			current->freq = occurrences[c];
+			if (created == 0)
+				freq_head = current;
+			else
+				prev->parent = current;
+
+			prev = current;
+			created++;
 		}
-		freq_list_init(current);
-
-		current->c = (char)c;
-		current->freq = occurrences[c];
-		if (c == 0)
-			freq_head = current;
-		else
-			prev->next = current;
-
-		prev = current;
 	}
-
-	//for (freq_list* p = freq_head; p->next; p = p->next)
-	  // printf("%d ", p->freq);
 	
-	freq_list* sorted_freq_head = insertion_sort(freq_head);
+	node* sorted_freq_head = insertion_sort(freq_head);
 
-	for (freq_list* p = sorted_freq_head; p; p = p->next)
-		printf("%d ", p->freq);
+	//node* p;
+	//for (p = sorted_freq_head; p; p = p->parent)
+	//	printf("%d ", p->freq);
+	//printf("\n\n");
+
+	//node* q;
+	//for (q = sorted_freq_head; q->parent; q = q->parent);
+
+	//for (q; q->child_l; q = q->child_l)
+	//	printf("%d ", q->freq);
+	//printf("\n\n");
+	
+	node* root = build_huff_tree(sorted_freq_head);
+	node* p;
+	for (p = root; p; p = p->child_l)
+		printf("%c\n", p->c);
 
 	return 0;
 }
