@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 typedef struct node node;
 
@@ -35,6 +36,47 @@ void node_init(node* p)
 {
 	p->parent = p->child_l = p->child_r = NULL;
 	p->freq = p->c = 0;
+}
+
+void get_nodes_by_char(node** dict, node* n)
+{
+	if (n->c == 0)
+	{
+		get_nodes_by_char(dict, n->child_l);
+		get_nodes_by_char(dict, n->child_r);
+	}
+	else
+		dict[n->c] = n;
+}
+
+char* encode(char* bufin, node* root)
+{
+	typedef struct encoded_char encoded_char;
+	struct encoded_char
+	{
+		int8_t nb_bits;
+		int32_t encoded;
+	};
+	node* lookup[255];
+	get_nodes_by_char(&lookup, root);
+
+	encoded_char dict[255];
+	for (uint8_t c = 0; c < 255; c++)
+	{
+		node* n = lookup[c];
+		dict[c].nb_bits = 0;
+		while (n != root)
+		{
+				dict[c].encoded <<= 1; 
+				dict[c].encoded |= (n == n->parent->child_l) ? 0 : 1; //writing the bits in reverse order starting from LSB. TODO reverse this
+				dict[c].nb_bits++;
+				n = n->parent;
+		}
+	}
+
+	char* encoded = (char*)(calloc(512, sizeof(char));
+
+	return encoded;
 }
 
 node* insertion_sort(node* unsorted_head)
@@ -184,18 +226,23 @@ node* build_huff_tree(node* lh) //lh is the least frequent node
 }
 
 int main(int argc, char* argv[])
-{
-	int16_t occurrences[255];
+{        
+	char buffer[4096];
+   char* text = buffer;
+	while (read(0, text, 4096) > 0);
+	printf("%s\n", text);
+
+	uint16_t occurrences[255];
 
 	//TODO replace this with calloc so its already initialized
 	for (int i = 0; i < 256; i++)
 	{
 		occurrences[i] = 0;
 	}
-	for (int32_t i = 0; i < strlen(argv[1]); i++)
+	for (int32_t i = 0; i < strlen(text); i++)
 	{
-		if (argv[1][i])                           //we're not encoding ascii null
-			occurrences[(int)(argv[1][i])/* - 1*/]++;
+		if (text[i])                           //we're not encoding ascii null
+			occurrences[(int)(text[i])/* - 1*/]++;
 	}
 
 	node* current;
@@ -205,7 +252,7 @@ int main(int argc, char* argv[])
 		int created = 0;
 		if (occurrences[c])
 		{
-			printf("freq %d, allocating %zd\n", occurrences[c], sizeof(node));
+			printf("freq %d %c, allocating %zd\n", occurrences[c], c, sizeof(node));
 			current = (node*)calloc(1, sizeof(node));
 			if (!current)
 			{
