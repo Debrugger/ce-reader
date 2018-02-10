@@ -71,9 +71,9 @@ char* encode(ENCODE_T* bufin, node* root)
       if (!n)
          continue;
       dict[c].nb_bits = 0;
+         printf("encoding %c\n", c);
       while (n != root)
       {
-         printf("encoding %c\n", c);
 
          dict[c].encoded |= (n == n->parent->child_l) ? 0 : 1; //writing the bits in reverse order starting from LSB. TODO reverse this
          dict[c].encoded	<<= 1;
@@ -233,52 +233,31 @@ node* build_huff_tree(node* lh) //lh is the least frequent node
 
       q->child_l = (a->freq <= b->freq) ? a : b;
       q->child_r = (a->freq > b->freq) ? a : b;
+      a->parent = b->parent = q;
+      a->child_l = a->child_r = b->child_l = b->child_r = NULL;
 
-      if (lh->parent == uh)
+      if (!lh->parent->parent)
+      {
+          uh = q;
+          return uh;
+      }
+      lh = lh->parent->parent;
+      if (lh == uh)
       {
          uh = q;
          return uh;
       }
-      lh = lh->parent->parent;
       node* n = lh;
-      while (n->freq <= q->freq)
+      while (n->parent)
       {
-         if (!n->parent)
-            break;
-         n = n->parent;
+          if (n->parent->freq > q->freq)
+              break;
+          n = n->parent;
       }
 
-      if (n->parent && n != lh) //now insert above n
-      {
-         q->parent = n->parent;
-         n->parent = q;
-      }
-      else if (!n->parent && n == lh)
-      {
-         if (n->freq < q->freq)
-         {
-            n->parent = q;
-            lh = n;
-            uh = q;
-         }
-         else
-         {
-            q->parent = n;
-            n->parent = NULL;
-            uh = n;
-            lh = q;
-         }
-      }
-      else if (n == lh)
-      {
-         lh = q;
-         q->parent = n;
-      }
-      else if (!n->parent)
-      {
-         uh = q;
-         n->parent = q;
-      }
+      q->parent = n->parent;
+      n->parent = q;
+
    }
    return uh;
 }
@@ -352,8 +331,8 @@ int main(int argc, char* argv[])
    //   printf("%c\n", q->c);
    //}
 
-   char* e = encode(text, root);
-   printf("encoded:'%s'\n", e);
+   //char* e = encode(text, root);
+   //printf("encoded:'%s'\n", e);
 
    return 0;
 }
