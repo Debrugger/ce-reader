@@ -204,26 +204,24 @@ node* build_huff_tree(node* lh) //lh is the least frequent node
    node *uh, *a, *b, *q;
    for (uh = lh; uh->parent; uh = uh->parent);
 
-   //pretty sure not needed? if frequency is 0 then node is not even created in main
-   //node* r;
-   //for (r = lh; r; r = r->parent)
-   //{
-   //	if (!r->freq)
-   //	{
-   //		printf("freeing in build tree\n");
-   //		free(r);
-   //	}
-   //	else
-   //		break;
-   //}
-   //lh = r;
+   for (node* i = lh; i->parent; i = i->parent)
+   {
+       i->child_l = i->child_r = NULL;
+   }
 
    while (uh != lh)
    {
+      node* lh_next = lh->parent->parent;
       if (!lh->parent)
       {
          printf("%c breaking\n", lh->c);
          break;
+      }
+      if (!lh_next)
+      {
+          if(lh != uh)
+              printf("this shouldnt happen\n");
+          return uh;
       }
       a = lh;
       b = lh->parent;
@@ -231,33 +229,40 @@ node* build_huff_tree(node* lh) //lh is the least frequent node
       node_init(q);
       q->freq = a->freq + b->freq;
 
-      q->child_l = (a->freq <= b->freq) ? a : b;
-      q->child_r = (a->freq > b->freq) ? a : b;
-      a->parent = b->parent = q;
-      a->child_l = a->child_r = b->child_l = b->child_r = NULL;
+      if (a->freq <= b->freq)
+      {
+          q->child_l = a;
+          q->child_r = b;
+      }
+      else
+      {
+          q->child_l = b;
+          q->child_r = a;
+      }
+      a->parent = q;
+      b->parent = q;
 
-      if (!lh->parent->parent)
-      {
-          uh = q;
-          return uh;
-      }
-      lh = lh->parent->parent;
-      if (lh == uh)
-      {
-         uh = q;
-         return uh;
-      }
-      node* n = lh;
+      node* n = lh_next;
       while (n->parent)
       {
-          if (n->parent->freq > q->freq)
-              break;
-          n = n->parent;
+         if(n->parent->freq >= q->freq)
+             break;
+         n = n->parent;
       }
-
-      q->parent = n->parent;
-      n->parent = q;
-
+      if (!n->parent)
+      {
+          n->parent = q;
+          uh = q;
+          q->parent = NULL;
+      }
+      else
+      {
+          q->parent = n->parent;
+          n->parent = q;
+      }
+      if (!lh_next)
+          return uh;
+      lh = lh_next;
    }
    return uh;
 }
