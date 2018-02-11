@@ -61,20 +61,19 @@ char* encode(ENCODE_T* bufin, node* root)
         int nb_bits;
         int32_t encoded;
     };
-    node** lookup = calloc(ENCODE_TMAX, sizeof(node*));
+    node** lookup = calloc(ENCODE_TMAX + 1, sizeof(node*));
     get_nodes_by_char(&lookup[0], root);
 
     encoded_char dict[ENCODE_TMAX];
-    for (ENCODE_T c = 0; c < ENCODE_TMAX; c++)
+    for (int c = 0; c < ENCODE_TMAX + 1; c++)
     {
         node* n = lookup[c];
+        dict[c].nb_bits = 0;
         if (!n)
             continue;
-        dict[c].nb_bits = 0;
         printf("encoding %c\n", c);
         while (n != root)
         {
-
             dict[c].encoded |= (n == n->parent->child_l) ? 0 : 1; //writing the bits in reverse order starting from LSB. TODO reverse this
             dict[c].encoded	<<= 1;
 
@@ -91,6 +90,18 @@ char* encode(ENCODE_T* bufin, node* root)
         dict[c].encoded = temp;
     }
 
+    //printing out the new alphabet
+    for (int s = 0; s <= ENCODE_TMAX; s++)
+    {
+        printf("%c: %d bits", s, dict[s].nb_bits);
+        for (int32_t i = 0; i < dict[s].nb_bits; i++)
+        {
+            printf("%d", (dict[s].encoded >> (sizeof(int32_t) * 8 - i)) % 2);
+
+        }
+        printf("\n");
+    }
+/*
     char* encoded = (char*)(calloc(512, sizeof(char)));
     int index = 0;
     char buffer = 0;
@@ -136,6 +147,8 @@ char* encode(ENCODE_T* bufin, node* root)
         }
     }
     return encoded;
+    */
+    return 0;
 }
 
 node* insertion_sort(node* unsorted_head)
