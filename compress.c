@@ -175,12 +175,16 @@ node* build_huff_tree(node* lh) //lh is the least frequent node
 void dealloc_tree(node* n)
 {
     if (n->is_leaf)
+    {
         free(n);
+        return;
+    }
     else
     {
         dealloc_tree(n->child_l);
         dealloc_tree(n->child_r);
     }
+    free(n);
 }
 
 void get_nodes_by_char(node** dict, node* n)
@@ -344,6 +348,21 @@ encoded_string* encode(ENCODE_T* bufin, node* root)
    return ret;
 }
 
+void serialize_tree(node* n)
+{
+    if (n->is_leaf)
+    {
+        printf("%c", n->c);
+    }
+    else
+    {
+        printf("\\0");
+        serialize_tree(n->child_l);
+        printf("X");
+        serialize_tree(n->child_r);
+    }
+}
+
 int main(int argc, char* argv[])
 {        
    char text[256];
@@ -394,12 +413,16 @@ int main(int argc, char* argv[])
 
    encoded_string* e = encode((unsigned char*)text, root);
 
+   serialize_tree(root);
+
    dealloc_tree(root);
 
+   printf("\n\nENCODED STRING:\n");
    for (int i = 0; i < e->size; i++)
       printBits(sizeof(unsigned char), &e->string[i]);
 
    free(e->string);
    free(e);
+   printf("input was %ld long\n", strlen(text));
    return 0;
 }
