@@ -5,6 +5,8 @@
 #include <limits.h>
 #include <fcntl.h>
 
+#define ERR_CHECK_ALLOC(P) { if (!P) { printf("Could not allocate more memory\n"); exit(1); } }
+
 #define ENCODE_T     unsigned char
 #define ENCODE_TSIZE sizeof(ENCODE_TYPE)
 #define ENCODE_TMAX  UCHAR_MAX
@@ -20,11 +22,12 @@ struct node
    long int freq;
 };
 
-typedef struct encoded_string encoded_string;
-struct encoded_string
+typedef struct string string;
+struct string
 {
+    size_t alloc_size;
     size_t size;
-    unsigned char* string;
+    unsigned char* chars;
 };
 
 void node_init(node* p)
@@ -114,6 +117,7 @@ node* build_huff_tree(node* lh) //lh is the least frequent node
       a = lh;
       b = lh->parent;
       q = (node*)malloc(sizeof(node));
+      ERR_CHECK_ALLOC(q)
       node_init(q);
       q->freq = a->freq + b->freq;
 
@@ -217,7 +221,7 @@ void printBits(size_t const size, void const * const ptr) //from https://stackov
    puts("");
 }
 
-encoded_string* encode(ENCODE_T* bufin, node* root)
+string* encode(ENCODE_T* bufin, node* root)
 {
    typedef struct encoded_char encoded_char;
    struct encoded_char
@@ -226,6 +230,8 @@ encoded_string* encode(ENCODE_T* bufin, node* root)
       int32_t encoded;
    };
    node** lookup = calloc(ENCODE_TMAX + 1, sizeof(node*));
+   ERR_CHECK_ALLOC(lookup)
+
    get_nodes_by_char(&lookup[0], root);
 
    encoded_char dict[ENCODE_TMAX + 1];
@@ -270,11 +276,8 @@ encoded_string* encode(ENCODE_T* bufin, node* root)
 
    size_t bufout_sz = 512;
    unsigned char* encoded = (unsigned char*)(calloc(bufout_sz, sizeof(unsigned char)));
-   if (!encoded)
-   {
-       printf("Could not allocate memory.\n");
-       exit(1);
-   }
+   ERR_CHECK_ALLOC(encoded)
+
    unsigned char buffer = 0x0;
 
    size_t current_byte = 0;
@@ -284,7 +287,7 @@ encoded_string* encode(ENCODE_T* bufin, node* root)
    ENCODE_T current_symbol = 0;
    encoded_char encoded_symbol;
 
-   for (symbol_index = 0; bufin[symbol_index] != 0; symbol_index++)
+   for (symbol_index = 0; bufin[symbol_index] != '\0'; symbol_index++)
    {
        current_symbol = bufin[symbol_index];
        encoded_symbol = dict[current_symbol];
@@ -294,11 +297,7 @@ encoded_string* encode(ENCODE_T* bufin, node* root)
        {
            bufout_sz *= 1.5;
            encoded = realloc(encoded, bufout_sz);
-           if (!encoded)
-           {
-               printf("Failed to allocate more memory. buffer size is %ld\n", bufout_sz);
-               exit(1);
-           }
+           ERR_CHECK_ALLOC(encoded)
        }
 
        for (int i = 0; i < encoded_symbol.nb_bits; i++)
@@ -326,7 +325,7 @@ encoded_string* encode(ENCODE_T* bufin, node* root)
        }
    }
 
-   encoded_string* ret = (encoded_string*)calloc(1, sizeof(encoded_string));
+   string* ret = (string*)calloc(1, sizeof(string));
    if (!ret)
    {
        printf("Failed to allocate more memory. buffer size is %ld\n", bufout_sz);
@@ -334,39 +333,87 @@ encoded_string* encode(ENCODE_T* bufin, node* root)
    }
 
    ret->size = current_byte;
+   ret->alloc_size = bufout_sz;
 
-   ret->string = (unsigned char*)calloc(ret->size, sizeof(unsigned char));
-   if (!ret->string)
-   {
-       printf("Failed to allocate more memory. buffer size is %ld\n", bufout_sz);
-       exit(1);
-   }
+   ret->chars = (unsigned char*)calloc(ret->size, sizeof(unsigned char));
+   ERR_CHECK_ALLOC(ret->chars)
 
-   memcpy((char*)ret->string, (char*)encoded, ret->size);
+   memcpy((char*)ret->chars, (char*)encoded, ret->size);
    free(encoded);
 
    return ret;
 }
 
-void serialize_tree(node* n)
+void serialize_tree(node* n, string* s) //string s should be allcoated beforehand
 {
+    if (s->size == s->alloc_size)
+    {
+        s->alloc_size *= 1.5;
+        s->chars = realloc(s->chars, s->alloc_size);
+        ERR_CHECK_ALLOC(s->chars)
+    }
+
+
     if (n->is_leaf)
     {
-        printf("%c", n->c);
+        *(char*)(s->chars + s->size) = n->c;
+        s->size++;
+        return;
     }
     else
     {
-        printf("\\0");
-        serialize_tree(n->child_l);
-        printf("X");
-        serialize_tree(n->child_r);
+        *(char*)(s->chars + s->size) = '\0';
+        s->size++;
+        serialize_tree(n->child_l, s);
+        *(char*)(s->chars + s->size) = 0x7; //BELL char as a marker
+        s->size++;
+        serialize_tree(n->child_r, s);
     }
 }
 
 int main(int argc, char* argv[])
 {        
-   char text[256];
-   strcpy(text, argv[1]);
+
+   if (!argv[1] || !argv[2])
+   {
+       printf("Usage: compress <input_file> <output_file>");
+       exit(1);
+   }
+
+   FILE* file;
+   size_t fsize;
+   char* buffer;
+
+   file = fopen (argv[1] , "rb");
+   if (!file)
+   {
+       printf("Failed to open file '%s'\n", argv[1]);
+       exit(1);
+   }
+
+   fseek(file , 0L , SEEK_END); //get the number of bytes in the file
+   fsize = ftell(file);
+   rewind(file);
+
+   buffer = calloc(1, fsize + 1);
+   if (!buffer)
+   {
+       fclose(file);
+       exit(1);
+   }
+
+   if (fread(buffer, sizeof(char), fsize, file) != fsize)
+   {
+      fclose(file);
+      free(buffer);
+      printf("Failed to read file\n");
+      exit(1);
+   }
+
+   fclose(file);
+
+
+   /* build linked list of all symbols with their frequency */
    node* freq_head = NULL;
 
    int occurrences[ENCODE_TMAX];
@@ -375,9 +422,11 @@ int main(int argc, char* argv[])
    {
       occurrences[i] = 0;
    }
-   for (int i = 0; i < strlen(text); i++)
+   for (int i = 0; i < fsize; i++)
    {
-      occurrences[(int)(text[i])]++;
+      if (i == '\a') //we will not encode the BELL character as that will be used as a marker in the serialization
+          continue;
+      occurrences[(int)(buffer[i])]++;
    }
 
    node* current;
@@ -411,18 +460,64 @@ int main(int argc, char* argv[])
    node* sorted_freq_head = insertion_sort(freq_head);
    node* root = build_huff_tree(sorted_freq_head);
 
-   encoded_string* e = encode((unsigned char*)text, root);
+   string* e = encode((unsigned char*)buffer, root);
 
-   serialize_tree(root);
+   free(buffer);
+
+   string serialized = {0};
+   serialized.alloc_size = 64;
+   serialized.chars = calloc(serialized.alloc_size, sizeof(char));
+   serialize_tree(root, &serialized);
+
+
+   /*
+   for (int i = 0; i < serialized.size; i++)
+   {
+       char c = *(serialized.chars + i * sizeof(char));
+       if (c > 39 && c != 0x7)
+          printf("%c\n", c);
+       else if (c && c <= 39)
+           printf("%d\n", c);
+       else if (c)
+          printf("XX\n");
+       else
+           printf("\\0\n");
+   } */
 
    dealloc_tree(root);
 
-   printf("\n\nENCODED STRING:\n");
-   for (int i = 0; i < e->size; i++)
-      printBits(sizeof(unsigned char), &e->string[i]);
+   /* write the output file:
+    * first 4 bytes: size of the encoded text
+    * next 2 bytes: size of the serialized tree
+    * serialized tree
+    * encoded text */
 
-   free(e->string);
+   FILE* out;
+   out = fopen(argv[2], "w+b");
+   if (!out)
+   {
+       printf("Could not create output file.\n");
+       exit(1);
+   }
+
+   int32_t length = e->size;
+   int16_t tree_length = serialized.size;
+
+   int write_success = 0;
+
+   write_success |= (fwrite(&length, sizeof(length), 1, out) == 1);
+   write_success &= (fwrite(&tree_length, sizeof(tree_length), 1, out) == 1);
+   write_success &= (fwrite(e->chars, 1, e->size, out) == e->size);
+
+   if (!write_success )
+   {
+       printf("Could not write to output file.\n");
+       exit(1);
+   }
+   fclose(out);
+
+   free(e->chars);
    free(e);
-   printf("input was %ld long\n", strlen(text));
+   printf("input was %ld long\n", fsize);
    return 0;
 }
