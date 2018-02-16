@@ -422,7 +422,7 @@ int main(int argc, char* argv[])
    {
       if (i == '\a') //we will not encode the BELL character as that will be used as a marker in the serialization
           continue;
-      occurrences[(int)(buffer[i])]++;
+      occurrences[(unsigned char)(buffer[i])]++;
    }
 
    node* current;
