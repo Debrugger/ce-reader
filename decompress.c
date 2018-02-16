@@ -62,9 +62,6 @@ node* deserialize_tree(unsigned char* serialized, size_t length)
             continue;
         }
 
-        if (next_parent == root->child_l)
-            printf("aaaaa i=%ld len=%ld\n", i, length);
-
         new_node->parent = next_parent;
         if (next_node_is_right)
         {
