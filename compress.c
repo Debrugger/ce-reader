@@ -111,7 +111,6 @@ node* build_huff_tree(node* lh) //lh is the least frequent node
       node* lh_next = lh->parent->parent;
       if (!lh->parent)
       {
-         printf("%c breaking\n", lh->c);
          break;
       }
       a = lh;
@@ -291,27 +290,22 @@ string* encode(ENCODE_T* bufin, node* root)
    {
        current_symbol = bufin[symbol_index];
        encoded_symbol = dict[current_symbol];
-       printf("encoding symbol '%c'\n", current_symbol);
 
-       if (current_byte == bufout_sz - 1)
+       while (1)
        {
-           bufout_sz *= 1.5;
-           encoded = realloc(encoded, bufout_sz);
-           ERR_CHECK_ALLOC(encoded)
-       }
-
-       for (int i = 0; i < encoded_symbol.nb_bits; i++)
-       {
+          if (current_byte == bufout_sz - 1)
+          {
+             bufout_sz *= 1.5;
+             encoded = realloc(encoded, bufout_sz);
+             ERR_CHECK_ALLOC(encoded)
+          }
            int bit_to_write = (encoded_symbol.encoded >> bits_written_cur_symbol) & 0x1;
            buffer |= bit_to_write;
            bits_written_cur_byte++;
            bits_written_cur_symbol++;
-           if (bits_written_cur_byte == 8 || (bufin[symbol_index + 1] == 0 /*&& bits_written_cur_byte != 0*/))
+           if (bits_written_cur_byte == 8)
            {
                bits_written_cur_byte = 0;
-
-               printf("flushing buffer: current byte is %ld\n", current_byte);
-
                encoded[current_byte] = buffer;
                buffer = 0x0;
                current_byte++;
@@ -324,19 +318,21 @@ string* encode(ENCODE_T* bufin, node* root)
            }
        }
    }
+   if (bits_written_cur_byte != 0)
+   {
+      buffer <<= sizeof(char) * 8 - bits_written_cur_byte - 1;
+      encoded[current_byte] = buffer;
+      current_byte++;
+   }
 
    string* ret = (string*)calloc(1, sizeof(string));
-   if (!ret)
-   {
-       printf("Failed to allocate more memory. buffer size is %ld\n", bufout_sz);
-       exit(1);
-   }
+   ERR_CHECK_ALLOC(ret);
 
    ret->size = current_byte;
    ret->alloc_size = bufout_sz;
 
    ret->chars = (unsigned char*)calloc(ret->size, sizeof(unsigned char));
-   ERR_CHECK_ALLOC(ret->chars)
+   ERR_CHECK_ALLOC(ret->chars);
 
    memcpy((char*)ret->chars, (char*)encoded, ret->size);
    free(encoded);
@@ -346,9 +342,9 @@ string* encode(ENCODE_T* bufin, node* root)
 
 void serialize_tree(node* n, string* s) //string s should be allcoated beforehand
 {
-    if (s->size == s->alloc_size)
+    if (s->size + 2 >= s->alloc_size)
     {
-        s->alloc_size *= 1.5;
+        s->alloc_size = s->alloc_size * 1.5;
         s->chars = realloc(s->chars, s->alloc_size);
         ERR_CHECK_ALLOC(s->chars)
     }
@@ -356,16 +352,16 @@ void serialize_tree(node* n, string* s) //string s should be allcoated beforehan
 
     if (n->is_leaf)
     {
-        *(char*)(s->chars + s->size) = n->c;
+        s->chars[s->size] = n->c;
         s->size++;
         return;
     }
     else
     {
-        *(char*)(s->chars + s->size) = '\0';
+        s->chars[s->size] = '\0';
         s->size++;
         serialize_tree(n->child_l, s);
-        *(char*)(s->chars + s->size) = 0x7; //BELL char as a marker
+        s->chars[s->size] = 0x7; //BELL char as a marker
         s->size++;
         serialize_tree(n->child_r, s);
     }
@@ -376,7 +372,7 @@ int main(int argc, char* argv[])
 
    if (!argv[1] || !argv[2])
    {
-       printf("Usage: compress <input_file> <output_file>");
+       printf("Usage: %s <input_file> <output_file>\n", argv[0]);
        exit(1);
    }
 
@@ -470,19 +466,26 @@ int main(int argc, char* argv[])
    serialize_tree(root, &serialized);
 
 
-   /*
+
+   int markers = 0;
+
+   printf("serialized tree size %lu\n\n\n\n\n", serialized.size);
    for (int i = 0; i < serialized.size; i++)
    {
        char c = *(serialized.chars + i * sizeof(char));
-       if (c > 39 && c != 0x7)
-          printf("%c\n", c);
-       else if (c && c <= 39)
-           printf("%d\n", c);
-       else if (c)
-          printf("XX\n");
-       else
+       if (!c)
            printf("\\0\n");
-   } */
+       else if (c == 7)
+       {
+           markers++;
+           printf("MARKER\n");
+       }
+       else if (c < 39)
+           printf("%d\n", c);
+       else
+           printf("%c\n", c);
+   }
+   printf("%d markers\n", markers);
 
    dealloc_tree(root);
 
@@ -500,13 +503,14 @@ int main(int argc, char* argv[])
        exit(1);
    }
 
-   int32_t length = e->size;
+   int32_t length = fsize;
    int16_t tree_length = serialized.size;
 
    int write_success = 0;
 
    write_success |= (fwrite(&length, sizeof(length), 1, out) == 1);
    write_success &= (fwrite(&tree_length, sizeof(tree_length), 1, out) == 1);
+   write_success &= (fwrite(serialized.chars, sizeof(char), tree_length, out) == tree_length);
    write_success &= (fwrite(e->chars, 1, e->size, out) == e->size);
 
    if (!write_success )
@@ -516,6 +520,7 @@ int main(int argc, char* argv[])
    }
    fclose(out);
 
+   free(serialized.chars);
    free(e->chars);
    free(e);
    printf("input was %ld long\n", fsize);
